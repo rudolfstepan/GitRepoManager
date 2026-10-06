@@ -1,0 +1,20 @@
+name: Feature request / Funktionswunsch
+description: Suggest a workflow improvement / Eine Verbesserung vorschlagen
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Workflow or problem / Arbeitsablauf oder Problem
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Desired behavior / Gewünschtes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / Betrachtete Alternativen

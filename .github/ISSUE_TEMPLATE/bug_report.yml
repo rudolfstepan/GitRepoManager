@@ -1,0 +1,32 @@
+name: Bug report / Fehlerbericht
+description: Report a reproducible problem / Ein reproduzierbares Problem melden
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "English and German are welcome. Remove credentials from logs. / Deutsch und Englisch sind willkommen. Zugangsdaten aus Protokollen entfernen."
+  - type: input
+    id: versions
+    attributes:
+      label: Versions / Versionen
+      description: App, Python, Git and operating system / Anwendung, Python, Git und Betriebssystem
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Schritte zur Reproduktion
+      description: Prefer temporary example repositories / Möglichst temporäre Beispiel-Repositories verwenden
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior / Erwartetes und tatsächliches Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log / Relevantes Protokoll
+      render: text

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Packaging and checks
+/build/
+/dist/
+/.verify/
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# Local settings, credentials and logs
+.git-repo-manager.json
+.git-repo-manager.json.tmp
+.env
+.env.*
+!.env.example
+*.log
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+include LICENSE README.md README.de.md CHANGELOG.md
+include CONTRIBUTING.md CONTRIBUTING.de.md
+include pyproject.toml app.py start.bat start.sh
+include .editorconfig .gitattributes
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include .github *.md *.yml
+global-exclude __pycache__ *.py[cod]
