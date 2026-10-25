@@ -23,10 +23,11 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 from .git_backend import ACTIONS, Repository, discover_repositories, read_repository, run_action
+from .changes_view import ChangesView
 
 from . import __version__
 from .settings import default_scan_root, default_state_file, legacy_state_file, load_state, save_state
-BG, PANEL, TEXT, MUTED, ACCENT = "#f3f5f9", "#ffffff", "#17243b", "#5a6980", "#245fe3"
+BG, PANEL, TEXT, MUTED, ACCENT = "#f1f5f9", "#ffffff", "#1e293b", "#475569", "#0f766e"
 
 
 def path_key(path: Path) -> str:
@@ -75,8 +76,11 @@ class GitRepoManager(tk.Tk):
         self.only_dirty = tk.BooleanVar()
         self.only_checked = tk.BooleanVar()
         self.skip_dependencies = tk.BooleanVar(value=bool(state.get("skip_dependencies", False)))
+        self.recursive_search = tk.BooleanVar(value=bool(state.get("recursive_search", False)))
         self.status_text = tk.StringVar(value="Bereit.")
         self.stats_text = tk.StringVar(value="Noch keine Repositories geladen")
+        self.selection_text = tk.StringVar(value="Projekte links anhaken, um eine Aktion auszuführen.")
+        self.active_project_text = tk.StringVar(value="Projekt auswählen")
         self.detail_title = tk.StringVar(value="Repository markieren, um Branches zu sehen")
         self.detail_info = tk.StringVar(value="Lokale und zuletzt abgerufene Remote-Branches erscheinen hier.")
         self._style()
@@ -102,6 +106,7 @@ class GitRepoManager(tk.Tk):
 
     def _save_state(self) -> None:
         state = {"root": self.root_path.get(), "geometry": self.geometry(),
+                 "recursive_search": self.recursive_search.get(),
                  "skip_dependencies": self.skip_dependencies.get(), "checked": sorted(self.checked)}
         try:
             save_state(self.state_file, state)
@@ -123,15 +128,18 @@ class GitRepoManager(tk.Tk):
         style.map("TButton", background=[("active", "#d9e2f2"), ("disabled", "#eceff5")],
                   foreground=[("disabled", "#96a0b1")])
         style.configure("Accent.TButton", background=ACCENT, foreground="white")
-        style.map("Accent.TButton", background=[("active", "#1b4fcb"), ("disabled", "#b7c9ee")],
+        style.map("Accent.TButton", background=[("active", "#115e59"), ("disabled", "#cbd5e1")],
                   foreground=[("disabled", "#f3f5fa")])
         style.configure("TEntry", padding=7, fieldbackground=PANEL)
         style.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT,
                         rowheight=round(31 * self.ui_scale), borderwidth=0)
         style.configure("Treeview.Heading", background="#e6ecf5", foreground=TEXT,
                         padding=(7, 8), font=("Segoe UI", 10, "bold"), relief="flat")
-        style.map("Treeview", background=[("selected", "#dbe8ff")],
-                  foreground=[("selected", "#163762")])
+        style.map("Treeview", background=[("selected", ACCENT)],
+                  foreground=[("selected", "#ffffff")])
+        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(14, 7), background="#e2e8f0", foreground=MUTED)
+        style.map("TNotebook.Tab", background=[("selected", PANEL)], foreground=[("selected", ACCENT)])
         style.configure("TCheckbutton", padding=4)
         style.configure("Horizontal.TProgressbar", background=ACCENT, troughcolor="#e1e8f3", borderwidth=0)
         style.configure("TPanedwindow", background=BG)
@@ -139,9 +147,6 @@ class GitRepoManager(tk.Tk):
     def _build_ui(self) -> None:
         outer = ttk.Frame(self, padding=(22, 18, 22, 12))
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="Git Repo Manager", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="Alle Projekte im Blick. Git-Aktionen gemeinsam ausführen.",
-                  style="Subtitle.TLabel").pack(anchor="w", pady=(2, 16))
         location = ttk.Frame(outer)
         location.pack(fill="x")
         ttk.Label(location, text="Suchordner").pack(side="left", padx=(0, 12))
@@ -154,49 +159,57 @@ class GitRepoManager(tk.Tk):
         self.scan_button.pack(side="left", padx=(8, 0))
         options = ttk.Frame(outer)
         options.pack(fill="x", pady=(5, 10))
-        self.skip_box = ttk.Checkbutton(options, text="Abhängigkeitsordner überspringen (node_modules, .venv, …)",
+        self.skip_box = ttk.Checkbutton(options, text="Abhängigkeiten überspringen (node_modules, .venv, …)",
                                        variable=self.skip_dependencies)
-        self.skip_box.pack(side="left")
-        ttk.Label(options, text="Rekursiv · inkl. verschachtelter Repos und Worktrees",
-                  style="Muted.TLabel").pack(side="right")
+        self.recursive_search_box = ttk.Checkbutton(
+            options, text="Rekursive Suche",
+            variable=self.recursive_search)
+        self.recursive_search_box.pack(side="left")
+        self.skip_box.pack(side="left", padx=(18, 0))
+        ttk.Separator(outer).pack(fill="x", pady=(0, 10))
         searchbar = ttk.Frame(outer)
         searchbar.pack(fill="x", pady=(0, 10))
-        ttk.Label(searchbar, text="Suche").pack(side="left", padx=(0, 12))
+        ttk.Label(searchbar, text="Projekte filtern").pack(side="left", padx=(0, 12))
         self.search_entry = ttk.Entry(searchbar, textvariable=self.search)
         self.search_entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(searchbar, text="×", width=3, command=lambda: self.search.set("")).pack(side="left", padx=(4, 12))
+        ttk.Button(searchbar, text="Filter löschen", command=self._clear_filters).pack(side="left", padx=(4, 12))
         ttk.Checkbutton(searchbar, text="Nur Änderungen", variable=self.only_dirty,
                         command=self._render).pack(side="left", padx=(0, 10))
         ttk.Checkbutton(searchbar, text="Nur Auswahl", variable=self.only_checked,
                         command=self._render).pack(side="left")
-        actions = ttk.Frame(outer)
-        actions.pack(fill="x", pady=(0, 8))
+        selection = ttk.Frame(outer)
+        selection.pack(fill="x", pady=(0, 8))
+        ttk.Label(selection, textvariable=self.stats_text, style="Section.TLabel").pack(side="left")
+        self.clear_button = ttk.Button(selection, text="Auswahl aufheben", command=self.clear_checks)
+        self.clear_button.pack(side="right")
+        self.select_button = ttk.Button(selection, text="Sichtbare auswählen", command=self.check_visible)
+        self.select_button.pack(side="right", padx=7)
+        actions = ttk.Frame(outer, padding=(0, 8))
+        actions.pack(side="bottom", fill="x")
+        ttk.Label(actions, textvariable=self.selection_text, style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        action_row = ttk.Frame(actions)
+        action_row.pack(fill="x")
         self.action_buttons = {}
-        for action, label in (("fetch", "Fetch"), ("pull", "Pull (ff-only)"), ("push", "Push")):
-            button = ttk.Button(actions, text=label, command=lambda a=action: self.perform(a),
-                                style="Accent.TButton" if action == "push" else "TButton")
+        for action, label in (("fetch", "Fetch für angehakte"),
+                              ("pull", "Pull für angehakte"),
+                              ("push", "Push für angehakte")):
+            button = ttk.Button(action_row, text=label, command=lambda a=action: self.perform(a))
             button.pack(side="left", padx=(0, 7))
             self.action_buttons[action] = button
-        self.refresh_button = ttk.Button(actions, text="Status aktualisieren · F5", command=self.refresh)
-        self.refresh_button.pack(side="left", padx=(8, 7))
-        self.stop_button = ttk.Button(actions, text="Abbrechen", command=self.stop)
-        self.stop_button.pack(side="left")
-        ttk.Button(actions, text="Auswahl aufheben", command=self.clear_checks).pack(side="right")
-        ttk.Button(actions, text="Sichtbare auswählen", command=self.check_visible).pack(side="right", padx=7)
-        ttk.Label(outer, text="Aktionen gelten für alle angehakten Repos, auch ausgeblendete. Push überträgt den aktuellen Branch zum Upstream.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(0, 9))
-        ttk.Label(outer, textvariable=self.stats_text, style="Section.TLabel").pack(anchor="w", pady=(0, 9))
-        panes = ttk.Panedwindow(outer, orient="vertical")
+        self.refresh_button = ttk.Button(action_row, text="Status neu laden · F5", command=self.refresh)
+        self.refresh_button.pack(side="right")
+        panes = ttk.Panedwindow(outer, orient="horizontal")
         panes.pack(fill="both", expand=True)
         listing = ttk.Frame(panes)
-        panes.add(listing, weight=3)
+        panes.add(listing, weight=1)
         columns = ("check", "name", "branch", "status", "sync", "remotes", "result", "path")
-        self.tree = ttk.Treeview(listing, columns=columns, show="headings", selectmode="browse")
-        headings = {"check": "☐", "name": "Repository", "branch": "Aktiver Branch",
-                    "status": "Arbeitsverzeichnis", "sync": "↑ / ↓", "remotes": "Remotes",
+        self.tree = ttk.Treeview(listing, columns=columns, show="headings", selectmode="browse",
+                                displaycolumns=("check", "name", "status"))
+        headings = {"check": "☐", "name": "Projekt", "branch": "Branch",
+                    "status": "Status", "sync": "↑ Senden / ↓ Holen", "remotes": "Remotes",
                     "result": "Letzte Aktion", "path": "Pfad"}
-        widths = {"check": 42, "name": 205, "branch": 155, "status": 155,
-                  "sync": 80, "remotes": 100, "result": 160, "path": 260}
+        widths = {"check": 36, "name": 190, "branch": 155, "status": 115,
+                  "sync": 150, "remotes": 100, "result": 160, "path": 260}
         for col in columns:
             self.tree.heading(col, text=headings[col],
                               command=self._toggle_all if col == "check" else lambda c=col: self._sort(c))
@@ -210,6 +223,9 @@ class GitRepoManager(tk.Tk):
         xscroll.grid(row=1, column=0, sticky="ew")
         listing.rowconfigure(0, weight=1)
         listing.columnconfigure(0, weight=1)
+        self.empty_label = ttk.Label(listing, text="Mit »Repos suchen« Projekte in diesem Ordner finden.",
+                                     style="Muted.TLabel", anchor="center", justify="center")
+        self.empty_label.place(relx=0.5, rely=0.5, anchor="center")
         self.tree.tag_configure("error", foreground="#b42332")
         self.tree.tag_configure("dirty", foreground="#8b5605")
         self.tree.tag_configure("even", background="#f7f9fd")
@@ -218,10 +234,32 @@ class GitRepoManager(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", lambda _: self._details())
         self.tree.bind("<Double-1>", self._double_click)
         self.tree.bind("<Button-3>", self._context_menu)
-        bottom = ttk.Panedwindow(panes, orient="horizontal")
-        panes.add(bottom, weight=2)
-        detail = ttk.Frame(bottom, padding=(0, 12, 12, 0))
-        bottom.add(detail, weight=1)
+        workspace = ttk.Frame(panes, padding=(12, 0, 0, 0))
+        panes.add(workspace, weight=3)
+        project_header = ttk.Label(workspace, textvariable=self.active_project_text,
+                                   style="Section.TLabel", wraplength=600)
+        project_header.pack(anchor="w", fill="x", pady=(0, 6))
+        workspace.bind("<Configure>", lambda e: project_header.configure(wraplength=max(200, e.width - 24)))
+        project_actions = ttk.Frame(workspace)
+        project_actions.pack(fill="x", pady=(0, 8))
+        self.project_action_buttons = {}
+        for action, label in (("fetch", "Fetch · Abrufen"), ("pull", "Pull · Übernehmen"),
+                              ("push", "Push · Senden")):
+            button = ttk.Button(project_actions, text=label,
+                                command=lambda a=action: self.perform(a, selected_only=True))
+            button.pack(side="left", padx=(0, 5))
+            self.project_action_buttons[action] = button
+        self.detail_tabs = ttk.Notebook(workspace)
+        self.detail_tabs.pack(fill="both", expand=True)
+        def initial_split(event):
+            if event.width > 100:
+                panes.sashpos(0, round(event.width * 0.34))
+                panes.unbind("<Configure>")
+        panes.bind("<Configure>", initial_split)
+        self.changes_view = ChangesView(self.detail_tabs)
+        self.detail_tabs.add(self.changes_view, text="Lokale Änderungen")
+        detail = ttk.Frame(self.detail_tabs, padding=(8, 8))
+        self.detail_tabs.add(detail, text="Projekt & Branches")
         ttk.Label(detail, textvariable=self.detail_title, style="Section.TLabel").pack(anchor="w")
         self.detail_label = ttk.Label(detail, textvariable=self.detail_info, style="Muted.TLabel",
                                       wraplength=560, justify="left")
@@ -230,7 +268,7 @@ class GitRepoManager(tk.Tk):
         branch_frame = ttk.Frame(detail)
         branch_frame.pack(fill="both", expand=True)
         self.branch_tree = ttk.Treeview(branch_frame, columns=("kind", "branch", "upstream", "tracking"),
-                                       show="headings", height=6, selectmode="browse")
+                                       show="headings", height=4, selectmode="browse")
         for col, title, width in (("kind", "Typ", 85), ("branch", "Branch", 200),
                                   ("upstream", "Upstream", 170), ("tracking", "Stand", 105)):
             self.branch_tree.heading(col, text=title)
@@ -249,23 +287,25 @@ class GitRepoManager(tk.Tk):
         ttk.Button(detail_buttons, text="Ordner öffnen", command=self.open_folder).pack(side="left")
         ttk.Button(detail_buttons, text="Terminal öffnen", command=self.open_terminal).pack(side="left", padx=7)
         ttk.Button(detail_buttons, text="Pfad kopieren", command=self.copy_path).pack(side="left")
-        activity = ttk.Frame(bottom, padding=(12, 12, 0, 0))
-        bottom.add(activity, weight=1)
+        activity = ttk.Frame(self.detail_tabs, padding=(8, 8))
+        self.detail_tabs.add(activity, text="Protokoll")
         log_header = ttk.Frame(activity)
         log_header.pack(fill="x", pady=(0, 7))
         ttk.Label(log_header, text="Aktivität & Ergebnisse", style="Section.TLabel").pack(side="left")
         ttk.Button(log_header, text="Speichern", command=self.save_log).pack(side="right")
         self.log = ScrolledText(activity, height=8, width=52, wrap="word", state="disabled", relief="flat",
                                 borderwidth=0, padx=12, pady=10, font=("Consolas", 9),
-                                background="#17243b", foreground="#e1e9f5", insertbackground="white")
+                                background=PANEL, foreground=TEXT, insertbackground=TEXT)
         self.log.pack(fill="both", expand=True)
-        self.log.tag_config("error", foreground="#ffaaa9")
-        self.log.tag_config("success", foreground="#8de1b1")
-        self.log.tag_config("muted", foreground="#9dadc6")
+        self.log.tag_config("error", foreground="#b91c1c")
+        self.log.tag_config("success", foreground="#166534")
+        self.log.tag_config("muted", foreground=MUTED)
         footer = ttk.Frame(outer)
         footer.pack(side="bottom", fill="x", pady=(12, 0), before=panes)
         self.progress = ttk.Progressbar(footer, length=140, mode="indeterminate")
         self.progress.pack(side="right", padx=(12, 0))
+        self.stop_button = ttk.Button(footer, text="Abbrechen", command=self.stop)
+        self.stop_button.pack(side="right", padx=(8, 0))
         ttk.Label(footer, textvariable=self.status_text, style="Muted.TLabel",
                   anchor="w").pack(side="left", fill="x", expand=True)
         self.menu = tk.Menu(self, tearoff=False, font=("Segoe UI", 10))
@@ -280,6 +320,11 @@ class GitRepoManager(tk.Tk):
         self.search_entry.focus_set()
         self.search_entry.select_range(0, "end")
         return "break"
+
+    def _clear_filters(self):
+        self.only_dirty.set(False)
+        self.only_checked.set(False)
+        self.search.set("")
 
     def _keyboard_select_all(self, event):
         if event.widget is self.tree:
@@ -336,6 +381,7 @@ class GitRepoManager(tk.Tk):
         self._log(f"Suche unter {root} …")
         self.status_text.set("Repositories werden gesucht …")
         skip = self.skip_dependencies.get()
+        recursive = self.recursive_search.get()
         def job():
             futures = []
             found = 0
@@ -359,6 +405,7 @@ class GitRepoManager(tk.Tk):
                     root, self.cancel, skip,
                     on_error=lambda text: self.events.put(("log", text, "error")),
                     on_progress=progress,
+                    recursive=recursive,
                 ):
                     found += 1
                     future = pool.submit(read_repository, path, self.cancel)
@@ -389,10 +436,14 @@ class GitRepoManager(tk.Tk):
                              else f"Status von {len(paths)} Repositories aktualisiert."))
         self._start("refresh", job)
 
-    def perform(self, action: str):
+    def perform(self, action: str, *, selected_only: bool = False):
         if self.busy:
             return
-        paths = [repo.path for key, repo in self.repos.items() if key in self.checked]
+        if selected_only:
+            repo = self._selected_repo()
+            paths = [repo.path] if repo else []
+        else:
+            paths = [repo.path for key, repo in self.repos.items() if key in self.checked]
         if not paths:
             return
         label = ACTIONS[action]
@@ -401,7 +452,7 @@ class GitRepoManager(tk.Tk):
             self.results[path_key(path)] = "Wartet …"
         self._render()
         def job():
-            success = failures = completed = 0
+            success = failures = skipped = completed = 0
             for index, path in enumerate(paths, 1):
                 if self.cancel.is_set():
                     break
@@ -417,18 +468,24 @@ class GitRepoManager(tk.Tk):
                 if result.args:
                     self.events.put(("log", subprocess.list2cmdline(result.args), "muted"))
                 self.events.put(("log", result.output or "Erfolgreich abgeschlossen.",
-                                 "success" if result.ok else "error"))
+                                 "success" if result.ok else ("muted" if result.skipped else "error")))
                 if result.ok:
                     success += 1
+                elif result.skipped:
+                    skipped += 1
                 else:
                     failures += 1
                 state = "Abgebrochen" if result.cancelled else (f"{label} ✓" if result.ok else f"{label}: Fehler")
+                if result.skipped:
+                    state = f"Übersprungen: {result.output}"
+                elif not result.ok and not result.cancelled and result.output:
+                    state += f" · {result.output}"
                 self.events.put(("result", key, state))
                 if not self.cancel.is_set():
                     self.events.put(("repo", read_repository(path, self.cancel)))
             if self.cancel.is_set():
                 self.events.put(("cancel_pending",))
-            text = f"{label}: {success} erfolgreich · {failures} fehlgeschlagen/übersprungen"
+            text = f"{label}: {success} erfolgreich · {skipped} übersprungen · {failures} fehlgeschlagen"
             if completed < len(paths):
                 text += f" · {len(paths) - completed} nicht ausgeführt"
             self.events.put(("status", text))
@@ -472,6 +529,7 @@ class GitRepoManager(tk.Tk):
                 self.busy = ""
                 self.progress.stop()
                 self._save_state()
+                self.changes_view.refresh()
                 changed = True
         if changed:
             self._render()
@@ -529,13 +587,25 @@ class GitRepoManager(tk.Tk):
                 self.tree.insert("", index, iid=key, values=values, tags=tags)
         if selected and self.tree.exists(selected[0]):
             self.tree.selection_set(selected[0])
+        elif visible:
+            self.tree.selection_set(visible[0][0])
         chosen = sum(key in self.checked for key in self.repos)
-        dirty = sum(repo.dirty for repo in self.repos.values())
-        ahead = sum(bool(repo.ahead) for repo in self.repos.values())
         hidden_checked = sum(key in self.checked and key not in keys for key in self.repos)
         extra = f" ({hidden_checked} ausgeblendet)" if hidden_checked else ""
-        self.stats_text.set(f"{len(self.repos)} Repositories  ·  {len(visible)} sichtbar  ·  "
-                            f"{chosen} ausgewählt{extra}  ·  {dirty} mit Änderungen  ·  {ahead} mit ausstehenden Commits")
+        self.stats_text.set(f"{len(visible)} von {len(self.repos)} Projekten · {chosen} ausgewählt{extra}")
+        self.selection_text.set(
+            f"Sammelaktion für {chosen} angehakte Projekte{extra}"
+            if chosen else "Mehrere Projekte bearbeiten: links anhaken, dann hier die Sammelaktion wählen.")
+        if visible:
+            self.empty_label.place_forget()
+        else:
+            text = ("Keine Projekte passen zum Filter.\nMit »Filter löschen« alle Projekte anzeigen."
+                    if self.repos else "Keine Projekte angezeigt.\nSuchordner prüfen und »Repos suchen« anklicken.\n"
+                    "Für tiefere Unterordner »Rekursive Suche« aktivieren.")
+            if self.busy == "scan":
+                text = "Projekte werden gesucht …"
+            self.empty_label.configure(text=text)
+            self.empty_label.place(relx=0.5, rely=0.5, anchor="center")
         self.tree.heading("check", text="☑" if keys and keys.issubset(self.checked) else "☐")
         self._update_controls()
 
@@ -544,10 +614,15 @@ class GitRepoManager(tk.Tk):
         selected = sum(key in self.checked for key in self.repos)
         for button in self.action_buttons.values():
             button.configure(state="normal" if idle and selected else "disabled")
-        for widget in (self.scan_button, self.browse_button, self.root_entry, self.skip_box):
+        for button in self.project_action_buttons.values():
+            button.configure(state="normal" if idle and self._selected_repo() else "disabled")
+        for widget in (self.scan_button, self.browse_button, self.root_entry, self.skip_box,
+                       self.recursive_search_box):
             widget.configure(state="normal" if idle else "disabled")
         self.refresh_button.configure(state="normal" if idle else "disabled")
         self.stop_button.configure(state="normal" if self.busy and not self.cancel.is_set() else "disabled")
+        self.select_button.configure(state="normal" if idle and self.tree.get_children() else "disabled")
+        self.clear_button.configure(state="normal" if idle and self.checked else "disabled")
 
     def _toggle(self, key):
         if self.busy == "action":
@@ -612,14 +687,23 @@ class GitRepoManager(tk.Tk):
         if children:
             self.branch_tree.delete(*children)
         repo = self._selected_repo()
+        self.changes_view.set_repository(repo)
+        self._update_controls()
         if not repo:
+            self.active_project_text.set("Projekt links anklicken · Änderungen erscheinen hier")
             self.detail_title.set("Repository markieren, um Branches zu sehen")
             self.detail_info.set("★ = aktueller Branch · Remote-Branches: Stand des letzten Fetch")
             return
+        self.active_project_text.set(
+            f"{repo.path.name} · {repo.branch or '—'}\n{repo.status} · "
+            f"↑ {repo.ahead} zu senden · ↓ {repo.behind} zu holen")
         local = sum(not b.remote for b in repo.branches)
         remote = len(repo.branches) - local
         self.detail_title.set(f"{repo.path.name} · {local} lokale / {remote} Remote-Branches")
         self.detail_info.set(f"{repo.path}\nAktiv: {repo.branch or '—'}  ·  Upstream: {repo.upstream or '—'}"
+                             + f"  ·  Remotes: {', '.join(repo.remotes) or '—'}"
+                             + (f"\nLetzte Aktion: {self.results[path_key(repo.path)]}"
+                                if path_key(repo.path) in self.results else "")
                              + (f"\n{repo.error}" if repo.error else "\nRemote-Branches: Stand des letzten Fetch"))
         for branch in sorted(repo.branches, key=lambda b: (b.remote, not b.current, b.name.casefold())):
             tracking = branch.tracking.replace("ahead ", "↑").replace("behind ", "↓").replace("gone", "entfernt").strip("[]")

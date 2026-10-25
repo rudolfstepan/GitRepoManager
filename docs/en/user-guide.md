@@ -2,6 +2,20 @@
 
 [Documentation](../README.md) · [Deutsch](../de/user-guide.md)
 
+## View uncommitted changes
+
+Select a project and open **Lokale Änderungen**. The file list distinguishes
+**Vorgemerkt** (staged), **Nicht vorgemerkt** (unstaged), **Neu** (untracked) and
+**Konflikt** (unresolved). A file can appear twice if edited again after staging.
+The first file is selected automatically. Select another file to see its diff
+below the file list: green / + indicates additions, red / − indicates
+deletions. New files show their current text; binary files show a notice.
+Large previews are truncated with a visible notice.
+
+Use **Änderungen neu laden** after edits in another application. This view is
+read-only and does not alter files or the index. Teal selections, dark text on
+light surfaces and explicit status labels complement the diff colors.
+
 ## Launch and scan folder
 
 Use Python 3.10+, Tkinter and Git on your PATH. The Windows Python installer
@@ -18,20 +32,40 @@ The labels below are German because the current UI is German.
 ## Find and select repositories
 
 1. Set **Suchordner** or use **Ordner wählen**.
-2. Click **Repos suchen** for a recursive scan.
-3. Check repositories in the first column. **Sichtbare auswählen** checks all
+2. Click **Repos suchen** to check the scan folder and its immediate subfolders.
+   Enable **Rekursive Suche** to also scan deeper subfolders. The checkbox is
+   unchecked by default; this setting is remembered across launches.
+3. Click a project on the left. Its status, changes and project actions appear on
+   the right: **Fetch · Abrufen**, **Pull · Übernehmen**, **Push · Senden**.
+   No checkbox is needed for these actions.
+4. For batch actions, check repositories in the first column. **Sichtbare auswählen** checks all
    visible rows; the checkbox in the header toggles all visible rows.
-4. **Auswahl aufheben** clears the entire selection.
+5. **Auswahl aufheben** clears the entire checkbox selection.
 
-The selected row controls branch details. Checkboxes determine which repositories
-receive Git actions. Checkbox selection is remembered across launches.
+The selected row controls the project actions and details on the right.
+Checkboxes apply only to batch actions at the bottom and are remembered across launches.
+
+Batch actions appear at the bottom: **Fetch für angehakte**, **Pull für angehakte**
+and **Push für angehakte**. Pull remains fast-forward only. The line above
+shows how many checked projects are affected, including hidden projects.
+**Status neu laden · F5** reloads the local status of all projects.
+
+The **Projekt & Branches** tab shows the selected row's path, remotes and branches.
+The **Protokoll** tab contains detailed results. **Filter löschen** resets the
+search text and both **Nur Änderungen** and **Nur Auswahl** filters.
+
+Pull is marked **Übersprungen** (skipped) when local changes exist, including
+untracked files. **Projekt & Branches** shows the reason and next step. Processing
+continues for the remaining checked projects. The summary counts successful,
+skipped and failed actions separately. Local changes are not automatically
+stashed or discarded.
 
 Search matches project names, paths, remotes and all known branch names. All
 space-separated search terms must match. Column headings sort the list.
 **Nur Auswahl** shows checked repositories. **Nur Änderungen** includes local
 changes, ahead/behind commits and read errors.
 
-Filters do not clear checkboxes. Actions apply to **all checked repositories,
+Filters do not clear checkboxes. Batch actions apply to **all checked repositories,
 including filtered-out rows**. The counter shows hidden checked repositories.
 
 The scan includes nested repositories, submodules with a `.git` file, linked
@@ -41,11 +75,11 @@ are skipped. The optional dependency filter excludes `node_modules`, `.venv`,
 
 ## Branches and status
 
-The main list shows the active branch, working-tree status, remotes and results.
-**↑** counts local commits ahead of the upstream; **↓** counts commits behind it.
-A dash means there is no upstream status to display.
+The left list shows projects and status. The project header on the right shows
+the active branch, **↑** commits to send and **↓** commits to receive. Remotes and
+results are available in **Projekt & Branches**.
 
-Click a row to inspect local and remote-tracking branches below. A star marks
+Open **Projekt & Branches** to inspect local and remote-tracking branches. A star marks
 the active branch. Upstreams and tracking differences are also shown.
 Switching, creating and deleting branches is done through Git in the terminal.
 

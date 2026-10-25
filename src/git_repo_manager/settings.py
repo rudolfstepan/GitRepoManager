@@ -48,6 +48,7 @@ def load_state(path: Path, *, fallback: Path | None = None) -> dict:
         if isinstance(state.get("checked"), list):
             result["checked"] = [item for item in state["checked"] if isinstance(item, str)]
         result["skip_dependencies"] = state.get("skip_dependencies") is True
+        result["recursive_search"] = state.get("recursive_search") is True
         return result
     except (OSError, ValueError):
         return {}

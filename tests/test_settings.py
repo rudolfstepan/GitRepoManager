@@ -31,7 +31,8 @@ class SettingsTests(unittest.TestCase):
             path.write_text(content, encoding="utf-8")
             self.assertEqual(load_state(path), {})
         path.write_text(json.dumps({"root": 123, "checked": ["valid", 7], "unknown": "ignored"}))
-        self.assertEqual(load_state(path), {"checked": ["valid"], "skip_dependencies": False})
+        self.assertEqual(load_state(path), {"checked": ["valid"], "skip_dependencies": False,
+                                           "recursive_search": False})
 
     def test_source_checkout_still_scans_the_workspace_parent(self):
         project = Path(__file__).resolve().parents[1]

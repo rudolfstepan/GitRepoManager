@@ -1,10 +1,47 @@
 """Repository discovery, Git operations and cancellation integration tests."""
 import threading
 import time
-from git_repo_manager.git_backend import discover_repositories, git, read_repository, run_action
+from git_repo_manager.git_backend import (discover_repositories, git, read_repository, run_action,
+                                         read_local_changes, read_change_diff)
 from tests.support import GitFixture
 
 class BackendTests(GitFixture):
+    def test_local_changes_show_index_worktree_and_new_files(self):
+        (self.source / "data.txt").write_text("staged content\n")
+        self.cmd(self.source, "add", "data.txt")
+        (self.source / "data.txt").write_text("unstaged content\n")
+        (self.source / "neu ä.txt").write_text("new content\n", encoding="utf-8")
+        (self.source / "binary.dat").write_bytes(b"\x00\x01\x02")
+        changes = {(c.path, c.area): c for c in read_local_changes(self.source)}
+        self.assertEqual(len(changes), 4)
+        staged = read_change_diff(self.source, changes["data.txt", "Vorgemerkt"])
+        unstaged = read_change_diff(self.source, changes["data.txt", "Nicht vorgemerkt"])
+        self.assertIn("-initial", staged)
+        self.assertIn("+staged content", staged)
+        self.assertIn("-staged content", unstaged)
+        self.assertIn("+unstaged content", unstaged)
+        self.assertIn("new content", read_change_diff(self.source, changes["neu ä.txt", "Neu"]))
+        self.assertIn("Binärdatei", read_change_diff(self.source, changes["binary.dat", "Neu"]))
+        self.assertEqual(self.cmd(self.source, "show", ":data.txt"), "staged content")
+
+    def test_local_changes_rename_delete_and_initial_commit(self):
+        self.cmd(self.source, "mv", "data.txt", "renamed ä.txt")
+        change, = read_local_changes(self.source)
+        self.assertEqual((change.path, change.original_path), ("renamed ä.txt", "data.txt"))
+        self.assertIn("rename from data.txt", read_change_diff(self.source, change))
+        self.cmd(self.source, "commit", "-m", "Rename")
+        (self.source / "renamed ä.txt").unlink()
+        change, = read_local_changes(self.source)
+        self.assertEqual(change.status, "Gelöscht")
+        self.assertIn("-initial", read_change_diff(self.source, change))
+        empty = self.root / "empty"
+        empty.mkdir()
+        self.cmd(empty, "init", "-b", "main")
+        (empty / "first.txt").write_text("first content\n")
+        self.cmd(empty, "add", ".")
+        change, = read_local_changes(empty)
+        self.assertIn("+first content", read_change_diff(empty, change))
+
     def test_scan_finds_nested_bare_worktree_and_optional_dependencies(self):
         nested = self.source / "nested"
         nested.mkdir()
@@ -17,6 +54,11 @@ class BackendTests(GitFixture):
         found = set(discover_repositories(self.root))
         self.assertEqual(found, {self.source, self.remote, self.peer, nested, linked, dependency})
         self.assertNotIn(dependency, set(discover_repositories(self.root, skip_dependencies=True)))
+        self.assertEqual(set(discover_repositories(self.root, recursive=False)),
+                         {self.source, self.remote, self.peer, linked})
+        self.assertEqual(set(discover_repositories(self.source, recursive=False)),
+                         {self.source, nested})
+        self.assertEqual(set(discover_repositories(self.remote, recursive=False)), {self.remote})
         linked_repo = read_repository(linked)
         self.assertEqual(linked_repo.branch, "linked-branch")
         self.assertFalse(linked_repo.error)
@@ -67,7 +109,8 @@ class BackendTests(GitFixture):
         before = self.cmd(self.source, "rev-parse", "HEAD")
         result = run_action(read_repository(self.source), "pull")
         self.assertFalse(result.ok)
-        self.assertIn("lokale Änderungen", result.output)
+        self.assertTrue(result.skipped)
+        self.assertIn("Lokale Änderungen", result.output)
         (self.source / "untracked.txt").unlink()
         self.commit(self.peer, "peer commit\n")
         self.cmd(self.peer, "push")
@@ -75,6 +118,7 @@ class BackendTests(GitFixture):
         before = self.cmd(self.source, "rev-parse", "HEAD")
         result = run_action(read_repository(self.source), "pull")
         self.assertFalse(result.ok)
+        self.assertFalse(result.skipped)
         self.assertEqual(self.cmd(self.source, "rev-parse", "HEAD"), before)
         self.assertFalse((self.source / ".git" / "MERGE_HEAD").exists())
 

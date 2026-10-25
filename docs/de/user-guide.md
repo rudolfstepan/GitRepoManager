@@ -17,14 +17,33 @@ bzw. bei einem installierten Paket das aktuelle Arbeitsverzeichnis.
 ## Repositories finden und auswählen
 
 1. **Suchordner** setzen oder **Ordner wählen** verwenden.
-2. Mit **Repos suchen** rekursiv suchen.
-3. Gewünschte Repositories in der ersten Spalte anhaken. **Sichtbare auswählen**
+2. Mit **Repos suchen** den Suchordner und seine direkten Unterordner prüfen.
+   **Rekursive Suche** aktivieren, um auch tiefere Unterordner zu durchsuchen.
+   Die Checkbox ist standardmäßig ausgeschaltet; die Einstellung wird gespeichert.
+3. Ein Projekt links anklicken. Rechts erscheinen Status, lokale Änderungen und
+   die Projektaktionen **Fetch · Abrufen**, **Pull · Übernehmen**, **Push · Senden**.
+   Dafür sind keine Häkchen nötig.
+4. Für Sammelaktionen Repositories in der ersten Spalte anhaken. **Sichtbare auswählen**
    markiert alle sichtbaren Zeilen; die Checkbox im Spaltenkopf schaltet diese um.
-4. **Auswahl aufheben** entfernt alle Häkchen.
+5. **Auswahl aufheben** entfernt alle Häkchen.
 
-Die markierte Zeile bestimmt die Branch-Details. Checkboxen bestimmen, welche
-Repositories eine Git-Aktion erhalten. Die Auswahl wird über Programmstarts
-hinweg gespeichert.
+Die markierte Zeile bestimmt die Projektaktionen und Details rechts. Checkboxen
+bestimmen ausschließlich die Sammelaktionen unten und werden gespeichert.
+
+Die Sammelaktionen stehen unten: **Fetch für angehakte**, **Pull für angehakte**
+und **Push für angehakte**. Direkt darüber
+steht, wie viele angehakte Projekte betroffen sind, einschließlich ausgeblendeter
+Projekte. **Status neu laden · F5** liest den lokalen Status aller Projekte neu.
+
+Der Reiter **Projekt & Branches** zeigt Pfad, Remotes und Branches der markierten
+Zeile. Im Reiter **Protokoll** stehen die ausführlichen Ergebnisse.
+**Filter löschen** setzt Suchtext, **Nur Änderungen** und **Nur Auswahl** zurück.
+
+Pull wird bei lokalen Änderungen (auch neuen, unversionierten Dateien) als
+**Übersprungen** angezeigt. Der Grund und der nächste Schritt stehen in
+**Projekt & Branches**. Die übrigen angehakten Projekte werden weiterverarbeitet.
+Die Zusammenfassung zählt erfolgreiche, übersprungene und fehlgeschlagene Aktionen
+getrennt. Lokale Änderungen werden nicht automatisch gestasht oder verworfen.
 
 Die Suche berücksichtigt Projektnamen, Pfade, Remotes und bekannte Branch-Namen.
 Alle durch Leerzeichen getrennten Suchbegriffe müssen passen.
@@ -32,7 +51,7 @@ Spaltenüberschriften sortieren die Liste. **Nur Auswahl** zeigt angehakte Repos
 **Nur Änderungen** berücksichtigt lokale Änderungen, vorausliegende/nachzuholende
 Commits und Lesefehler.
 
-Filter entfernen keine Häkchen. Aktionen betreffen **alle angehakten Repositories,
+Filter entfernen keine Häkchen. Sammelaktionen betreffen **alle angehakten Repositories,
 auch ausgefilterte Zeilen**. Der Zähler zeigt ausgeblendete ausgewählte Repos an.
 
 Die Suche findet verschachtelte Repositories, Submodule mit einer `.git`-Datei,
@@ -41,13 +60,31 @@ werden übersprungen. Der optionale Abhängigkeitsfilter schließt `node_modules
 `.venv`, `venv`, `__pycache__`, `.tox` und `.mypy_cache` aus. Er ist
 standardmäßig ausgeschaltet.
 
+## Nicht committete Änderungen ansehen
+
+Ein Projekt in der Liste markieren und den Reiter **Lokale Änderungen** öffnen.
+Die Dateiliste unterscheidet **Vorgemerkt** (im Index für den nächsten Commit),
+**Nicht vorgemerkt**, **Neu** und **Konflikt**. Eine Datei kann in zwei Bereichen
+erscheinen, wenn sie nach dem Vormerken nochmals bearbeitet wurde.
+
+Die erste Datei wird automatisch angezeigt. Eine andere Datei anklicken, um
+darunter deren Diff zu sehen: **Grün / +** bedeutet
+hinzugefügt, **Rot / −** bedeutet entfernt. Neue Dateien zeigen ihren aktuellen
+Textinhalt. Binärdateien erhalten einen Hinweis statt einer Textvorschau.
+Große Vorschauen werden mit einem sichtbaren Hinweis gekürzt.
+
+**Änderungen neu laden** aktualisiert die Ansicht nach Änderungen im Editor.
+Die Ansicht liest ausschließlich; sie verändert weder Dateien noch den Index.
+Das Farbschema nutzt Petrol für die Auswahl, dunklen Text auf hellen Flächen
+und zusätzliche Statusbezeichnungen, damit Farben nicht die einzige Orientierung sind.
+
 ## Branches und Status
 
-Die Hauptliste zeigt aktiven Branch, Arbeitsverzeichnis-Status, Remotes und
-Ergebnisse. **↑** zählt lokale Commits vor dem Upstream, **↓** nachzuholende
-Commits. Ein Strich bedeutet, dass kein Upstream-Status verfügbar ist.
+Die Liste links zeigt Projekt und Status. Der Kopfbereich rechts zeigt den
+aktiven Branch sowie **↑** zu sendende und **↓** zu holende Commits.
+Remotes und Ergebnisse stehen im Reiter **Projekt & Branches**.
 
-Ein Klick auf eine Zeile zeigt darunter lokale und Remote-Tracking-Branches.
+Der Reiter **Projekt & Branches** zeigt lokale und Remote-Tracking-Branches.
 Ein Stern markiert den aktiven Branch. Upstreams und Abweichungen sind ebenfalls
 sichtbar. Wechsel, Erstellung und Löschung von Branches erfolgen über Git im Terminal.
 

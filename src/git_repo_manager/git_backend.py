@@ -23,10 +23,11 @@ class GitResult:
     stdout: str = ""
     stderr: str = ""
     cancelled: bool = False
+    skipped: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.returncode == 0 and not self.cancelled
+        return self.returncode == 0 and not self.cancelled and not self.skipped
 
     @property
     def output(self) -> str:
@@ -41,6 +42,66 @@ class Branch:
     upstream: str = ""
     tracking: str = ""
     commit: str = ""
+
+
+@dataclass
+class LocalChange:
+    path: str
+    area: str
+    status: str
+    original_path: str = ""
+
+
+def read_local_changes(path: Path, cancel: threading.Event | None = None) -> list[LocalChange]:
+    result = git(path, "status", "--porcelain=v1", "-z", "--untracked-files=all", cancel=cancel)
+    if not result.ok:
+        raise RuntimeError(result.output)
+    changes = []
+    records = iter(result.stdout.split("\0"))
+    labels = {"M": "Geändert", "A": "Hinzugefügt", "D": "Gelöscht", "R": "Umbenannt",
+              "C": "Kopiert", "T": "Dateityp geändert"}
+    for record in records:
+        if not record:
+            continue
+        code, name = record[:2], record[3:]
+        original = next(records, "") if "R" in code or "C" in code else ""
+        if code == "??":
+            changes.append(LocalChange(name, "Neu", "Unversioniert"))
+        elif code in {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}:
+            changes.append(LocalChange(name, "Konflikt", "Nicht aufgelöst"))
+        else:
+            for flag, area in zip(code, ("Vorgemerkt", "Nicht vorgemerkt")):
+                if flag != " ":
+                    changes.append(LocalChange(name, area, labels.get(flag, flag), original))
+    return changes
+
+
+def read_change_diff(path: Path, change: LocalChange,
+                     cancel: threading.Event | None = None) -> str:
+    limit = 256_000
+    if change.area == "Neu":
+        target = path / change.path
+        if target.is_symlink() or not target.resolve().is_relative_to(path.resolve()):
+            return "Verknüpfung: Inhaltsvorschau wird nicht geladen."
+        if not target.is_file():
+            return "Keine reguläre Datei; keine Inhaltsvorschau verfügbar."
+        with target.open("rb") as stream:
+            data = stream.read(limit + 1)
+        if b"\0" in data:
+            return "Binärdatei – keine Textvorschau verfügbar."
+        text = "Neue, noch nicht versionierte Datei\n\n" + data[:limit].decode("utf-8", "replace")
+        return text + ("\n\n[Vorschau gekürzt]" if len(data) > limit else "")
+    args = ["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--no-color"]
+    if change.area == "Vorgemerkt":
+        args.append("--cached")
+    args.extend(["--", change.path])
+    if change.original_path:
+        args.append(change.original_path)
+    result = git(path, *args, cancel=cancel)
+    if not result.ok:
+        raise RuntimeError(result.output)
+    text = result.stdout or "Keine Textänderungen verfügbar (z. B. Submodul oder bereits aktualisierte Datei)."
+    return text[:limit] + ("\n\n[Vorschau gekürzt]" if len(text) > limit else "")
 
 
 @dataclass
@@ -156,9 +217,11 @@ def discover_repositories(
     root: Path, cancel: threading.Event | None = None, skip_dependencies: bool = False,
     on_error: Callable[[str], None] | None = None,
     on_progress: Callable[[int, Path], None] | None = None,
+    *, recursive: bool = True,
 ) -> Iterator[Path]:
     """Find normal, nested, bare and linked-worktree repositories without following links."""
-    pending = [root.resolve()]
+    root = root.resolve()
+    pending = [root]
     visited = 0
     while pending:
         if cancel is not None and cancel.is_set():
@@ -178,7 +241,8 @@ def discover_repositories(
             )
             if marker is not None or bare:
                 yield folder
-            if bare:
+            # A shallow scan includes the search folder and its direct children.
+            if bare or (not recursive and folder != root):
                 continue
             for name, entry in entries.items():
                 if name in ALWAYS_SKIP or (skip_dependencies and name in DEPENDENCY_DIRS):
@@ -269,16 +333,16 @@ def run_action(repo: Repository, action: str, cancel: threading.Event | None = N
     if repo.error:
         return GitResult([], 1, stderr=f"Repository nicht lesbar: {repo.error}")
     if not repo.remotes:
-        return GitResult([], 1, stderr="Kein Remote konfiguriert.")
+        return GitResult([], 1, stderr="Kein Remote konfiguriert.", skipped=True)
     if action != "fetch":
         if repo.bare:
-            return GitResult([], 1, stderr="Für Bare-Repositories steht hier nur Fetch zur Verfügung.")
+            return GitResult([], 1, stderr="Für Bare-Repositories steht hier nur Fetch zur Verfügung.", skipped=True)
         if repo.detached or repo.unborn:
-            return GitResult([], 1, stderr="Ein lokaler Branch mit mindestens einem Commit ist erforderlich.")
+            return GitResult([], 1, stderr="Ein lokaler Branch mit mindestens einem Commit ist erforderlich.", skipped=True)
         if not repo.upstream_remote or not repo.upstream_ref or repo.upstream_remote == ".":
-            return GitResult([], 1, stderr="Kein Remote-Upstream für diesen Branch konfiguriert. Bitte zuerst in Git einrichten.")
+            return GitResult([], 1, stderr="Kein Remote-Upstream für diesen Branch konfiguriert. Bitte zuerst in Git einrichten.", skipped=True)
     if action == "pull" and repo.dirty:
-        return GitResult([], 1, stderr="Pull übersprungen: lokale Änderungen zuerst committen oder stashen.")
+        return GitResult([], 1, stderr="Lokale Änderungen: zuerst committen oder stashen, dann Pull erneut ausführen.", skipped=True)
     commands = {
         "fetch": ("fetch", "--all", "--prune"),
         "pull": ("pull", "--ff-only", "--no-rebase", "--no-autostash"),
